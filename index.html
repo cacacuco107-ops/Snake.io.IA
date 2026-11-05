@@ -94,7 +94,7 @@
 
     const SNAKE_SIZE = 12;
     const FOOD_SIZE = 7;
-    const SEGMENT_SPACING = 6;
+    const SEGMENT_SPACING = 5; // Reducido para que el cuerpo no se estire
     const BOT_COUNT = 8;
     const FOOD_COUNT = 120;
     const FOOD_COLORS = ['#ff4d4d', '#4dff4d', '#4d4dff', '#ffff4d', '#ff4dff', '#4dffff', '#ffa500', '#ffffff'];
@@ -119,7 +119,8 @@
             this.x = x;
             this.y = y;
             this.angle = Math.random() * Math.PI * 2;
-            this.speed = isBot ? 2.2 : 3.8;
+            // VELOCIDAD AJUSTADA: Más lenta para que sea controlable
+            this.speed = isBot ? 1.5 : 2.2; 
             this.color = color;
             this.isBot = isBot;
             this.skin = skin;
@@ -138,7 +139,8 @@
             let diff = this.targetAngle - this.angle;
             while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
-            this.angle += diff * 0.15;
+            // GIRO SUAVE: Reducido de 0.15 a 0.08
+            this.angle += diff * 0.08;
 
             this.x += Math.cos(this.angle) * this.speed;
             this.y += Math.sin(this.angle) * this.speed;
@@ -192,7 +194,6 @@
 
         draw() {
             ctx.save();
-            // Efecto de brillo
             ctx.shadowBlur = 10;
             ctx.shadowColor = this.color;
 
@@ -203,13 +204,11 @@
                 ctx.beginPath();
                 ctx.arc(seg.x, seg.y, Math.max(size, 3), 0, Math.PI * 2);
                 
-                // Texturas y Degradados
                 if (this.skin && this.skin.pattern === 'stripe' && i % 2 === 0) {
-                    ctx.fillStyle = '#111'; // Rayas oscuras
+                    ctx.fillStyle = '#111';
                 } else if (this.skin && this.skin.pattern === 'dots' && i % 3 === 0) {
-                    ctx.fillStyle = '#fff'; // Puntos blancos
+                    ctx.fillStyle = '#fff';
                 } else {
-                    // Degradado para simular volumen 3D
                     let grad = ctx.createRadialGradient(seg.x - 2, seg.y - 2, 1, seg.x, seg.y, Math.max(size, 3));
                     grad.addColorStop(0, '#ffffff');
                     grad.addColorStop(0.3, this.color);
@@ -219,7 +218,6 @@
                 ctx.fill();
             }
             
-            // Cabeza
             ctx.beginPath();
             ctx.arc(this.x, this.y, SNAKE_SIZE + 2, 0, Math.PI * 2);
             let headGrad = ctx.createRadialGradient(this.x - 3, this.y - 3, 2, this.x, this.y, SNAKE_SIZE + 2);
@@ -230,7 +228,6 @@
             ctx.fill();
             ctx.shadowBlur = 0;
 
-            // Ojos
             let eyeOffset = 6;
             let eyeAngle = this.angle + Math.PI/2;
             let ex1 = this.x + Math.cos(eyeAngle) * eyeOffset;
@@ -238,10 +235,8 @@
             let ex2 = this.x - Math.cos(eyeAngle) * eyeOffset;
             let ey2 = this.y - Math.sin(eyeAngle) * eyeOffset;
             
-            // Fondo blanco de los ojos
             ctx.beginPath(); ctx.arc(ex1, ey1, 4, 0, Math.PI*2); ctx.fillStyle = '#fff'; ctx.fill();
             ctx.beginPath(); ctx.arc(ex2, ey2, 4, 0, Math.PI*2); ctx.fill();
-            // Pupilas
             ctx.beginPath(); ctx.arc(ex1 + Math.cos(this.angle)*1.5, ey1 + Math.sin(this.angle)*1.5, 2, 0, Math.PI*2); ctx.fillStyle = '#000'; ctx.fill();
             ctx.beginPath(); ctx.arc(ex2 + Math.cos(this.angle)*1.5, ey2 + Math.sin(this.angle)*1.5, 2, 0, Math.PI*2); ctx.fill();
             
@@ -339,7 +334,6 @@
             let x = Math.random() * W;
             let y = Math.random() * H;
             let color = `hsl(${Math.random() * 360}, 100%, 50%)`;
-            // Los bots también tienen un "skin" falso para que brillen y tengan rayas
             let botSkin = { pattern: Math.random() > 0.5 ? 'stripe' : 'solid' };
             bots.push(new Snake(x, y, color, true, botSkin));
         }
@@ -431,13 +425,11 @@
 
         ctx.clearRect(0, 0, W, H);
         
-        // Grid más limpio y tecnológico
         ctx.strokeStyle = 'rgba(0, 255, 255, 0.05)';
         ctx.lineWidth = 1;
         for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
         for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-        // Puntos de colores con brillo neón
         for (let f of food) {
             ctx.beginPath();
             ctx.arc(f.x, f.y, FOOD_SIZE, 0, Math.PI * 2);
