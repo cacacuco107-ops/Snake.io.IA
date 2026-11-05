@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Snake.io — Estilo Pro</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; overflow: hidden; }
+        body { background: #111118; font-family: 'Courier New', monospace; }
+        #gameCanvas { display: block; background: #111118; }
+        
+        .ui-panel {
+            position: absolute; background: rgba(20, 20, 30, 0.7);
+            border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 12px; padding: 10px 15px;
+            color: #fff; font-size: 14px; pointer-events: none; backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        #stats { top: 15px; left: 15px; }
+        #stats span { color: #0ff; font-weight: bold; }
+        
+        #skinMenu {
+            position: absolute; top: 15px; right: 15px;
+            background: rgba(20, 20, 30, 0.85); border: 2px solid #0ff;
+            border-radius: 12px; padding: 15px; color: #fff;
+            pointer-events: auto; width: 220px; backdrop-filter: blur(8px);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+        }
+        #skinMenu h3 { color: #0ff; margin-bottom: 10px; font-size: 16px; text-align: center; text-transform: uppercase; letter-spacing: 2px; }
+        
+        .skin-btn {
+            display: flex; align-items: center; justify-content: space-between;
+            width: 100%; padding: 8px 12px; margin-bottom: 6px;
+            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px; color: #fff; cursor: pointer; font-family: inherit; font-size: 13px;
+            transition: 0.2s;
+        }
+        .skin-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: #0ff; }
+        .skin-btn.active { border-color: #0f0; background: rgba(0, 255, 0, 0.1); box-shadow: 0 0 10px rgba(0,255,0,0.3); }
+        .skin-btn.locked { opacity: 0.4; cursor: not-allowed; }
+        .skin-preview {
+            width: 24px; height: 24px; border-radius: 50%;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        #gameOver {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(10, 10, 20, 0.95);
+            border: 2px solid #ff4d4d; padding: 40px; border-radius: 15px;
+            text-align: center; display: none; box-shadow: 0 0 40px rgba(255, 77, 77, 0.4);
+            z-index: 100; backdrop-filter: blur(10px);
+        }
+        #gameOver h1 { color: #ff4d4d; margin-bottom: 15px; font-size: 28px; text-shadow: 0 0 10px rgba(255,77,77,0.8); }
+        #gameOver p { color: #fff; margin-bottom: 10px; font-size: 16px; }
+        #gameOver button {
+            background: #0ff; color: #000; border: none;
+            padding: 12px 35px; font-size: 18px; font-weight: bold;
+            border-radius: 8px; cursor: pointer; font-family: inherit; margin-top: 20px;
+            transition: 0.2s;
+        }
+        #gameOver button:hover { background: #fff; transform: scale(1.05); }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="stats" class="ui-panel">
+    PUNTOS: <span id="score">0</span> | NIVEL: <span id="level">1</span>
+</div>
+
+<div id="skinMenu">
+    <h3>Skins</h3>
+    <div id="skinList"></div>
+</div>
+
+<div id="gameOver">
+    <h1>GAME OVER</h1>
+    <p>Puntuación: <span id="finalScore">0</span></p>
+    <p>Nivel: <span id="finalLevel">1</span></p>
+    <button onclick="restartGame()">Jugar de Nuevo</button>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let W, H;
+    function resize() {
+        W = canvas.width = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    const SNAKE_SIZE = 12;
+    const FOOD_SIZE = 7;
+    const SEGMENT_SPACING = 6;
+    const BOT_COUNT = 8;
+    const FOOD_COUNT = 120;
+    const FOOD_COLORS = ['#ff4d4d', '#4dff4d', '#4d4dff', '#ffff4d', '#ff4dff', '#4dffff', '#ffa500', '#ffffff'];
+
+    const SKINS = [
+        { id: 'classic', name: 'Cian Clásico', color: '#0ff', pattern: 'solid', reqLevel: 1 },
+        { id: 'fire', name: 'Fuego', color: '#ff4d4d', pattern: 'stripe', reqLevel: 2 },
+        { id: 'toxic', name: 'Tóxico', color: '#4dff4d', pattern: 'dots', reqLevel: 3 },
+        { id: 'royal', name: 'Real', color: '#ffff4d', pattern: 'stripe', reqLevel: 4 },
+        { id: 'galaxy', name: 'Galaxia', color: '#ff4dff', pattern: 'dots', reqLevel: 5 },
+        { id: 'neon', name: 'Neón', color: '#4dffff', pattern: 'stripe', reqLevel: 7 },
+        { id: 'ghost', name: 'Fantasma', color: '#ffffff', pattern: 'solid', reqLevel: 10 }
+    ];
+
+    let unlockedSkins = JSON.parse(localStorage.getItem('unlockedSkins') || '["classic"]');
+    let activeSkinId = localStorage.getItem('activeSkin') || 'classic';
+
+    let player, bots, food, mouse, gameOver;
+
+    class Snake {
+        constructor(x, y, color, isBot = false, skin = null) {
+            this.x = x;
+            this.y = y;
+            this.angle = Math.random() * Math.PI * 2;
+            this.speed = isBot ? 2.2 : 3.8;
+            this.color = color;
+            this.isBot = isBot;
+            this.skin = skin;
+            this.segments = [];
+            this.length = 5;
+            this.targetAngle = this.angle;
+            
+            for (let i = 0; i < this.length; i++) {
+                this.segments.push({ x: x, y: y });
+            }
+        }
+
+        update() {
+            if (this.isBot) this.think();
+
+            let diff = this.targetAngle - this.angle;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            this.angle += diff * 0.15;
+
+            this.x += Math.cos(this.angle) * this.speed;
+            this.y += Math.sin(this.angle) * this.speed;
+
+            if (this.x < 0 || this.x > W || this.y < 0 || this.y > H) {
+                if (!this.isBot) {
+                    endGame();
+                } else {
+                    this.angle += Math.PI;
+                    this.targetAngle = this.angle;
+                    this.x = Math.max(SNAKE_SIZE, Math.min(W - SNAKE_SIZE, this.x));
+                    this.y = Math.max(SNAKE_SIZE, Math.min(H - SNAKE_SIZE, this.y));
+                }
+            }
+
+            this.segments.unshift({ x: this.x, y: this.y });
+            while (this.segments.length > this.length) {
+                this.segments.pop();
+            }
+            
+            for (let i = 1; i < this.segments.length; i++) {
+                let dx = this.segments[i-1].x - this.segments[i].x;
+                let dy = this.segments[i-1].y - this.segments[i].y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist > SEGMENT_SPACING) {
+                    let ratio = SEGMENT_SPACING / dist;
+                    this.segments[i].x = this.segments[i-1].x - dx * ratio;
+                    this.segments[i].y = this.segments[i-1].y - dy * ratio;
+                }
+            }
+        }
+
+        think() {
+            let closestFood = null;
+            let minDist = Infinity;
+            for (let f of food) {
+                let d = Math.hypot(f.x - this.x, f.y - this.y);
+                if (d < minDist) { minDist = d; closestFood = f; }
+            }
+
+            if (closestFood) {
+                this.targetAngle = Math.atan2(closestFood.y - this.y, closestFood.x - this.x);
+            }
+
+            let margin = 120;
+            if (this.x < margin) this.targetAngle = 0;
+            if (this.x > W - margin) this.targetAngle = Math.PI;
+            if (this.y < margin) this.targetAngle = Math.PI / 2;
+            if (this.y > H - margin) this.targetAngle = -Math.PI / 2;
+        }
+
+        draw() {
+            ctx.save();
+            // Efecto de brillo
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = this.color;
+
+            for (let i = this.segments.length - 1; i >= 0; i--) {
+                let seg = this.segments[i];
+                let size = SNAKE_SIZE * (1 - i / (this.segments.length * 1.5));
+                
+                ctx.beginPath();
+                ctx.arc(seg.x, seg.y, Math.max(size, 3), 0, Math.PI * 2);
+                
+                // Texturas y Degradados
+                if (this.skin && this.skin.pattern === 'stripe' && i % 2 === 0) {
+                    ctx.fillStyle = '#111'; // Rayas oscuras
+                } else if (this.skin && this.skin.pattern === 'dots' && i % 3 === 0) {
+                    ctx.fillStyle = '#fff'; // Puntos blancos
+                } else {
+                    // Degradado para simular volumen 3D
+                    let grad = ctx.createRadialGradient(seg.x - 2, seg.y - 2, 1, seg.x, seg.y, Math.max(size, 3));
+                    grad.addColorStop(0, '#ffffff');
+                    grad.addColorStop(0.3, this.color);
+                    grad.addColorStop(1, '#000000');
+                    ctx.fillStyle = grad;
+                }
+                ctx.fill();
+            }
+            
+            // Cabeza
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, SNAKE_SIZE + 2, 0, Math.PI * 2);
+            let headGrad = ctx.createRadialGradient(this.x - 3, this.y - 3, 2, this.x, this.y, SNAKE_SIZE + 2);
+            headGrad.addColorStop(0, '#fff');
+            headGrad.addColorStop(0.4, this.color);
+            headGrad.addColorStop(1, '#000');
+            ctx.fillStyle = headGrad;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Ojos
+            let eyeOffset = 6;
+            let eyeAngle = this.angle + Math.PI/2;
+            let ex1 = this.x + Math.cos(eyeAngle) * eyeOffset;
+            let ey1 = this.y + Math.sin(eyeAngle) * eyeOffset;
+            let ex2 = this.x - Math.cos(eyeAngle) * eyeOffset;
+            let ey2 = this.y - Math.sin(eyeAngle) * eyeOffset;
+            
+            // Fondo blanco de los ojos
+            ctx.beginPath(); ctx.arc(ex1, ey1, 4, 0, Math.PI*2); ctx.fillStyle = '#fff'; ctx.fill();
+            ctx.beginPath(); ctx.arc(ex2, ey2, 4, 0, Math.PI*2); ctx.fill();
+            // Pupilas
+            ctx.beginPath(); ctx.arc(ex1 + Math.cos(this.angle)*1.5, ey1 + Math.sin(this.angle)*1.5, 2, 0, Math.PI*2); ctx.fillStyle = '#000'; ctx.fill();
+            ctx.beginPath(); ctx.arc(ex2 + Math.cos(this.angle)*1.5, ey2 + Math.sin(this.angle)*1.5, 2, 0, Math.PI*2); ctx.fill();
+            
+            ctx.restore();
+        }
+
+        eat() {
+            this.length += 1;
+            if (!this.isBot) {
+                updateUI();
+            }
+        }
+
+        checkCollision(other) {
+            for (let seg of other.segments) {
+                let d = Math.hypot(seg.x - this.x, seg.y - this.y);
+                if (d < SNAKE_SIZE * 1.2) return true;
+            }
+            return false;
+        }
+    }
+
+    function updateUI() {
+        let score = (player.length - 5) * 10;
+        let level = Math.floor(score / 50) + 1;
+        document.getElementById('score').innerText = score;
+        document.getElementById('level').innerText = level;
+        checkUnlocks(level);
+    }
+
+    function checkUnlocks(level) {
+        let newUnlock = false;
+        for (let skin of SKINS) {
+            if (level >= skin.reqLevel && !unlockedSkins.includes(skin.id)) {
+                unlockedSkins.push(skin.id);
+                newUnlock = true;
+            }
+        }
+        if (newUnlock) {
+            localStorage.setItem('unlockedSkins', JSON.stringify(unlockedSkins));
+            renderSkinMenu();
+        }
+    }
+
+    function renderSkinMenu() {
+        const list = document.getElementById('skinList');
+        list.innerHTML = '';
+
+        for (let skin of SKINS) {
+            let btn = document.createElement('button');
+            btn.className = 'skin-btn';
+            let isUnlocked = unlockedSkins.includes(skin.id);
+            
+            if (!isUnlocked) {
+                btn.classList.add('locked');
+                btn.innerHTML = `<span>🔒 ${skin.name}</span> <small>Nvl ${skin.reqLevel}</small>`;
+                btn.disabled = true;
+            } else {
+                if (activeSkinId === skin.id) btn.classList.add('active');
+                btn.innerHTML = `
+                    <span style="display:flex; align-items:center; gap:8px;">
+                        <div class="skin-preview" style="background:${skin.color}; color:${skin.color}"></div>
+                        ${skin.name}
+                    </span>
+                    ${activeSkinId === skin.id ? '✓' : ''}
+                `;
+                btn.onclick = () => {
+                    activeSkinId = skin.id;
+                    localStorage.setItem('activeSkin', activeSkinId);
+                    applySkin();
+                    renderSkinMenu();
+                };
+            }
+            list.appendChild(btn);
+        }
+    }
+
+    function applySkin() {
+        let skin = SKINS.find(s => s.id === activeSkinId) || SKINS[0];
+        if (player) {
+            player.color = skin.color;
+            player.skin = skin;
+        }
+    }
+
+    function init() {
+        player = new Snake(W/2, H/2, '#0ff', false);
+        applySkin();
+        
+        bots = [];
+        food = [];
+        gameOver = false;
+
+        for (let i = 0; i < BOT_COUNT; i++) {
+            let x = Math.random() * W;
+            let y = Math.random() * H;
+            let color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            // Los bots también tienen un "skin" falso para que brillen y tengan rayas
+            let botSkin = { pattern: Math.random() > 0.5 ? 'stripe' : 'solid' };
+            bots.push(new Snake(x, y, color, true, botSkin));
+        }
+
+        for (let i = 0; i < FOOD_COUNT; i++) {
+            spawnFood();
+        }
+
+        document.getElementById('gameOver').style.display = 'none';
+        updateUI();
+        renderSkinMenu();
+    }
+
+    function spawnFood() {
+        food.push({
+            x: Math.random() * (W - 20) + 10,
+            y: Math.random() * (H - 20) + 10,
+            color: FOOD_COLORS[Math.floor(Math.random() * FOOD_COLORS.length)]
+        });
+    }
+
+    mouse = { x: W/2, y: H/2 };
+    window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+    window.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        mouse.x = e.touches[0].clientX;
+        mouse.y = e.touches[0].clientY;
+    }, { passive: false });
+
+    function endGame() {
+        gameOver = true;
+        let score = (player.length - 5) * 10;
+        document.getElementById('finalScore').innerText = score;
+        document.getElementById('finalLevel').innerText = Math.floor(score / 50) + 1;
+        document.getElementById('gameOver').style.display = 'block';
+    }
+
+    window.restartGame = function() {
+        init();
+        gameLoop();
+    }
+
+    function gameLoop() {
+        if (gameOver) return;
+
+        if (player) {
+            player.targetAngle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+            player.update();
+
+            for (let i = food.length - 1; i >= 0; i--) {
+                if (Math.hypot(food[i].x - player.x, food[i].y - player.y) < SNAKE_SIZE + FOOD_SIZE) {
+                    food.splice(i, 1);
+                    player.eat();
+                    spawnFood();
+                }
+            }
+
+            for (let bot of bots) {
+                if (player.checkCollision(bot)) {
+                    endGame();
+                    return;
+                }
+            }
+        }
+
+        for (let i = 0; i < bots.length; i++) {
+            let bot = bots[i];
+            bot.update();
+
+            for (let j = food.length - 1; j >= 0; j--) {
+                if (Math.hypot(food[j].x - bot.x, food[j].y - bot.y) < SNAKE_SIZE + FOOD_SIZE) {
+                    food.splice(j, 1);
+                    bot.eat();
+                    spawnFood();
+                }
+            }
+
+            for (let j = 0; j < bots.length; j++) {
+                if (i === j) continue;
+                if (bot.checkCollision(bots[j])) {
+                    bot.x = Math.random() * W;
+                    bot.y = Math.random() * H;
+                    bot.length = 5;
+                    bot.segments = [];
+                    for (let k = 0; k < bot.length; k++) bot.segments.push({x: bot.x, y: bot.y});
+                }
+            }
+        }
+
+        ctx.clearRect(0, 0, W, H);
+        
+        // Grid más limpio y tecnológico
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.05)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+        for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+        // Puntos de colores con brillo neón
+        for (let f of food) {
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, FOOD_SIZE, 0, Math.PI * 2);
+            ctx.fillStyle = f.color;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = f.color;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        for (let bot of bots) bot.draw();
+        if (player) player.draw();
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    init();
+    gameLoop();
+</script>
+
+</body>
+</html>
